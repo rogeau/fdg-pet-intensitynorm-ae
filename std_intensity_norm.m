@@ -44,6 +44,12 @@ function std_intensity_norm(input_dir)
         pons_header = spm_vol(resliced_pons_path);
         pons = spm_read_vols(pons_header);
         pons_mask = (pons == 1);
+        
+	pons_mask_pre = (pons == 1);
+	se = strel('sphere', 2);
+	pons_mask = imerode(pons_mask_pre, se);
+	fprintf('Pons voxels before: %d, after: %d\n', nnz(pons_mask_pre), nnz(pons_mask));
+
         pons_mean = mean(pet_vol(pons_mask), 'omitnan');
 
         if pons_mean == 0 || isnan(pons_mean)
@@ -80,52 +86,65 @@ function std_intensity_norm(input_dir)
             spm_write_vol(gm_hdr, norm_gm);
         end
 
-        % Save images for QC
-        mid_x = round(size(pet_vol, 1) / 2);  % Sagittal (X)
-        mid_z = round(size(pet_vol, 3) / 2);  % Axial (Z)
+	% Save images for QC
+	% Axial slice through the middle of the pons mask
+	[~, ~, pons_z] = ind2sub(size(pons_mask), find(pons_mask));
+	pons_mid_z = round(mean(pons_z));     % central Z of the pons
+	orig_ax_pons = flipud(squeeze(pet_vol(:, :, pons_mid_z))');
+	pons_ax      = flipud(squeeze(pons_mask(:, :, pons_mid_z))');
 
-	    orig_sag = flipud(squeeze(pet_vol(mid_x, :, :))');
-	    pons_sag = flipud(squeeze(pons_mask(mid_x, :, :))');
-        intersect_sag = orig_sag .* double(pons_sag);
+	% Sagittal slice through the middle of the pons mask
+	[pons_x, ~, ~] = ind2sub(size(pons_mask), find(pons_mask));
+	pons_mid_x = round(mean(pons_x));     % central X of the pons
+	orig_sag_pons = flipud(squeeze(pet_vol(pons_mid_x, :, :))');
+	pons_sag      = flipud(squeeze(pons_mask(pons_mid_x, :, :))');
 
-	    orig_ax = flipud(squeeze(pet_vol(:, :, mid_z))');
-	    gm_ax = flipud(squeeze(gm_mask(:, :, mid_z))');
-        intersect_ax = orig_ax .* double(gm_ax);
+	% Axial slice through the middle of the GM mask
+	[~, ~, gm_z] = ind2sub(size(gm_mask), find(gm_mask));
+	gm_mid_z = round(mean(gm_z));         % central Z of the GM
+	orig_ax_gm = flipud(squeeze(pet_vol(:, :, gm_mid_z))');
+	gm_ax      = flipud(squeeze(gm_mask(:, :, gm_mid_z))');
 
-        fig = figure('Name', 'Sagittal & Axial Visualization', 'NumberTitle', 'off');
-        colormap gray;
+	fig = figure('Name', 'Intensity Norm QC', 'NumberTitle', 'off');
+	colormap gray;
 
-        subplot(2, 3, 1);
-        imagesc(orig_sag); axis image off;
-        title('Original');
-        subplot(2, 3, 2);
-        imagesc(pons_sag); axis image off;
-        title('WFU Pons');
-        subplot(2, 3, 3);
-        imagesc(intersect_sag); axis image off;
-        title('Intersection');
+	% --- Pons (top row) ---
+	subplot(2, 3, 1);
+	imagesc(orig_ax_pons); axis image off;
+	title('PET slice (pons)');
 
-        % Bottom row: axial
-        subplot(2, 3, 4);
-        imagesc(orig_ax); axis image off;
-        title('Original');
+	subplot(2, 3, 2);
+	imagesc(orig_ax_pons); axis image off; hold on;
+	red = cat(3, ones(size(pons_ax)), zeros(size(pons_ax)), zeros(size(pons_ax)));
+	h = imagesc(red);
+	set(h, 'AlphaData', double(pons_ax) * 0.5);
+	title('PET + eroded pons (50%)');
 
-        subplot(2, 3, 5);
-        imagesc(gm_ax); axis image off;
-        title('GM');
+	subplot(2, 3, 3);
+	imagesc(orig_sag_pons); axis image off; hold on;
+	red = cat(3, ones(size(pons_sag)), zeros(size(pons_sag)), zeros(size(pons_sag)));
+	h = imagesc(red);
+	set(h, 'AlphaData', double(pons_sag) * 0.5);
+	title('PET sagittal + pons (50%)');
 
-        subplot(2, 3, 6);
-        imagesc(intersect_ax); axis image off;
-        title('Intersection');
+	% --- GM (bottom row) ---
+	subplot(2, 3, 4);
+	imagesc(orig_ax_gm); axis image off;
+	title('PET slice (GM)');
+
+	subplot(2, 3, 5);
+	imagesc(orig_ax_gm); axis image off; hold on;
+	red = cat(3, ones(size(gm_ax)), zeros(size(gm_ax)), zeros(size(gm_ax)));
+	h = imagesc(red);
+	set(h, 'AlphaData', double(gm_ax) * 0.5);
+	title('PET + GM (50%)');
 
 	[filepath_parent, ~, ~] = fileparts(file_path);
 	[filepath_gdparent, parent_folder] = fileparts(filepath_parent);
 	[~, gdparent_folder] = fileparts(filepath_gdparent);
-
-	full_title = sprintf('Intensity Norm QC for: %s/%s/%s%s', gdparent_folder, parent_folder, nii_files(i).name);
+	full_title = sprintf('Intensity Norm QC for: %s/%s/%s', gdparent_folder, parent_folder, nii_files(i).name);
 	sgtitle(full_title, 'Interpreter', 'none', 'FontWeight', 'bold', 'FontSize', 10);
-
-        exportgraphics(fig, output_pdf, 'Append', true, 'ContentType', 'image');
-        close(fig);
+	exportgraphics(fig, output_pdf, 'Append', true, 'ContentType', 'image');
+	close(fig);
     end
 end
