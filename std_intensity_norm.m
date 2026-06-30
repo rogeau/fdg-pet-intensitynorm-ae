@@ -50,6 +50,14 @@ function std_intensity_norm(input_dir)
 	pons_mask = imerode(pons_mask_pre, se);
 	fprintf('Pons voxels before: %d, after: %d\n', nnz(pons_mask_pre), nnz(pons_mask));
 
+	% Save eroded pons mask as NIfTI
+	eroded_header = pons_header;
+	eroded_header.fname = fullfile(nii_files(i).folder, 'eroded_rwfu_pons.nii');
+	eroded_header.dt = [spm_type('uint8') 0];   % save as uint8 (0/1 mask)
+	eroded_header.pinfo = [1; 0; 0];             % reset scaling (no scale/offset)
+	eroded_header = spm_create_vol(eroded_header);
+	spm_write_vol(eroded_header, double(pons_mask));
+
         pons_mean = mean(pet_vol(pons_mask), 'omitnan');
 
         if pons_mean == 0 || isnan(pons_mean)
